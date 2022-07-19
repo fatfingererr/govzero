@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title><%= daoname %> | Govzero</title>
+    <link rel="icon" type="image/png" href="favicon.ico" />
+    <link
+      rel="stylesheet"
+      href="//cdn.jsdelivr.net/npm/hack-font@3/build/web/hack.css"
+    />
+    <style>
+      body {
+        font-family: Hack;
+      }
+    </style>
+  </head>
+  <body bgcolor="#000000" text="#1BFF69">
+    <h1><%= daoname %> | Govzero</h1>
+    <input
+      id="connectWallet"
+      type="button"
+      value="链结钱包"
+      onclick="Connect()"
+    />
+    <!-- | <input id="transfer"  type="button" value="Action2" onclick="Transfer()"> -->
+    <h4 id="account"></h4>
+    <h3 id="tokens"></h3>
+    <span><font id="keyin"></font><font id="typing"></font></span>
+    <br /><br /><br /><br />
+    <h5>
+      <a href="https://github.com/fatfingererr/govzero"
+        ><font color="#ffffff">GitHub</font></a
+      >
+    </h5>
+    <font color="#808080"
+      >I hate almost all web3 projects have a fancy frontend design.</font
+    >
+  </body>
+  <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <script src="js/abi/erc20.js"></script>
+  <script src="js/abi/transfer.js"></script>
+  <script>
+    var web3
+
+    window.onkeydown = function (e) {
+      console.log("code:" + e.which)
+      var keyin = document.getElementById("keyin")
+
+      if (e.keyCode === 8) {
+        keyin.innerHTML = keyin.innerHTML.slice(0, -1)
+        e.preventDefault()
+      } else if (e.code === "Enter") {
+        keyin.innerHTML += "<br/>"
+      } else {
+        console.log("code:" + e.code)
+        keyin.innerHTML += String.fromCharCode(e.which).toLowerCase()
+      }
+    }
+
+    setInterval(() => {
+      var typing = document.getElementById("typing")
+      if (typing.innerHTML === "_") {
+        typing.innerHTML = "&nbsp;\n"
+      } else {
+        typing.innerHTML = "_"
+      }
+    }, 1000)
+
+    async function Connect() {
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts"
+      })
+      web3 = new Web3(window.ethereum)
+      let decimals = web3.utils.toBN(18)
+      var account = document.getElementById("account")
+      const accountAddress = await web3.eth.requestAccounts()
+      account.innerHTML = "钱包: " + accountAddress[0]
+      connectWallet = document.getElementById("connectWallet")
+      connectWallet.remove()
+      const tokenAddress = "0x5D8C3E43EBd84d63CfFD00e473ba3Fdb5920CDC1"
+      const balance = await web3.eth.getBalance(accountAddress[0])
+      const tokenInst = new web3.eth.Contract(erc20Abi(), tokenAddress)
+      const totalSupply = await tokenInst.methods.totalSupply().call()
+      const tokenAmount = await tokenInst.methods
+        .balanceOf(accountAddress[0])
+        .call()
+      const myToken = web3.utils
+        .toBN(tokenAmount)
+        .div(web3.utils.toBN(10).pow(decimals))
+      const totalSupplyToken = web3.utils
+        .toBN(totalSupply)
+        .div(web3.utils.toBN(10).pow(decimals))
+      console.log()
+
+      var tokens = document.getElementById("tokens")
+      tokens.innerHTML =
+        "我有 " +
+        myToken +
+        " 个 $DDAO，当前总发行 " +
+        totalSupplyToken +
+        " $DDAO，我占比 " +
+        (Number(100 * myToken) / Number(totalSupplyToken)).toFixed(2) +
+        "%"
+
+      tokens
+    }
+
+    async function Transfer() {
+      let tokenAddress = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+      let toAddress = "0x8Df70546681657D6FFE227aB51662e5b6e831B7A"
+      let fromAddress = "0x7EA1EaA27b313D04D359bF3e654FE927376e31Bb"
+      // Use BigNumber
+      let decimals = web3.utils.toBN(15)
+      let amount = web3.utils.toBN(1)
+      let minABI = trasferAbi()
+      // Get ERC20 Token contract instance
+      let contract = new web3.eth.Contract(minABI, tokenAddress)
+      // calculate ERC20 token amount
+      let value = amount.mul(web3.utils.toBN(10).pow(decimals))
+      console.log(`value:${value}`)
+      // call transfer function
+      contract.methods
+        .transfer(toAddress, value)
+        .send({ from: fromAddress })
+        .on("transactionHash", function (hash) {
+          console.log(hash)
+        })
+    }
+  </script>
+</html>
