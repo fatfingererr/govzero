@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/f295b209-029e-460f-b9c4-abff61372932/microsoft.web/sites/subscriptions/f295b209-029e-460f-b9c4-abff61372932/resourceGroups/ddao/providers/Microsoft.Web/sites/ddao",
+    "appService.deploySubpath": "."
+}

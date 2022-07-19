@@ -1,7 +1,7 @@
 {
   "name": "govzero",
   "version": "1.0.0",
-  "description": "> > I hate almost all web3 projects have a fancy frontend design. 😠 >",
+  "description": "I hate almost all web3 projects have a fancy frontend design.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
