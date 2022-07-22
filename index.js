@@ -16,7 +16,7 @@ app.use(bodyParser.json())
 
 const mode = process.argv[2]
 let serverUrl = `http://localhost:${port}`
-if (mode === "prod") serverUrl = "https://ddao.azurewebsites.net"
+if (mode === "prod") serverUrl = "https://ddao.herokuapp.com"
 
 app.get("/", function (req, res) {
   res.render("index", {
