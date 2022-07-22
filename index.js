@@ -22,7 +22,9 @@ if (mode === "prod") serverUrl = "https://ddao.herokuapp.com"
 app.get("/", function (req, res) {
   res.render("index", {
     daoname: "DDAO",
-    serverUrl
+    serverUrl,
+    token: '0x93E787174c3e05fa5dEdd6Bc904bDcAC5031aDcE',
+    governor: '0x53F4023713852E1De3365f4c99125330D2823A5e'
   })
 })
 app.get("/api/scoreProposal/count", (req, res, next) => {
