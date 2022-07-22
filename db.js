@@ -3,7 +3,7 @@ var db = new sqlite3.Database("./main.db")
 
 db.serialize(function () {
 
-  db.get('PRAGMA journal_mode=WAL;')
+  // db.get('PRAGMA journal_mode=WAL;')
 
   const sqlCreateTableScoreProposal =
     "create table if not exists ScoreProposal (\

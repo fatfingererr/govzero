@@ -288,8 +288,8 @@
 
     async function createProposal() {
       running()
-      const address = document.getElementById("createProposalAddress").value
-      const amount = document.getElementById("createProposalAmount").value
+      const address = document.getElementById("createProposalAddress").value.replace(/\s/g, '')
+      const amount = document.getElementById("createProposalAmount").value.replace(/\s/g, '')
       const nowTime = new Date()
       const description =
         "[" +
