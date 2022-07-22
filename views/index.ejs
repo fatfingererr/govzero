@@ -15,7 +15,11 @@
     </style>
   </head>
   <body bgcolor="#000000" text="#1BFF69">
-    <h1><%= daoname %> | Govzero</h1>
+    <h1>
+      <a style="text-decoration: none; color: #1bff69" href="."
+        ><%= daoname %> | Govzero</a
+      >
+    </h1>
     <input
       id="connectWallet"
       type="button"
@@ -25,7 +29,69 @@
     <!-- | <input id="transfer"  type="button" value="Action2" onclick="Transfer()"> -->
     <h4 id="account"></h4>
     <h3 id="tokens"></h3>
-    <span><font id="keyin"></font><font id="typing"></font></span>
+    <span>
+      <button
+        id="createProposal"
+        type="button"
+        onclick="startCreateProposal()"
+        hidden
+      >
+        提案: 发放积分</button
+      >&nbsp;
+      <button
+        id="viewProposals"
+        type="button"
+        onclick="startViewProposals()"
+        hidden
+      >
+        提案一览</button
+      >&nbsp;
+      <button
+        id="governParameters"
+        type="button"
+        onclick="startGovernParameters()"
+        hidden
+      >
+        治理参数</button
+      >&nbsp;
+      <button
+        id="setDelegates"
+        type="button"
+        onclick="startSetDelegates()"
+        hidden
+      >
+        投票代理人变更</button
+      >&nbsp;&nbsp;</span
+    ><br /><br />
+    <form id="createProposalForm" hidden>
+      <h3>提案发放积分</h3>
+      <span
+        >发放地址<font color="red"><small>*</small></font
+        >:&nbsp;<input id="createProposalAddress" type="text" /></span
+      ><br /><br />
+      <span
+        >发放数量<font color="red"><small>*</small></font
+        >:&nbsp;<input id="createProposalAmount" type="text" /></span
+      ><br />
+      <br />
+      <span
+        >提案描述:&nbsp;<input
+          id="createProposalDescription"
+          type="text" /></span
+      ><br /><br />
+      <button
+        id="createProposalFormSummit"
+        type="button"
+        onclick="runCreateProposal()"
+      >
+        提案上链
+      </button>
+    </form>
+    <small id="log"></small>
+    <div id="viewProposalsBlock" hidden></div>
+    <div id="governParametersBlock" hidden></div>
+    <div id="setDelegatesBlock" hidden></div>
+    <span><font id="typing"></font></span>
     <br /><br /><br /><br />
     <h5>
       <a href="https://github.com/fatfingererr/govzero"
@@ -39,92 +105,1144 @@
   <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
   <script src="js/abi/erc20.js"></script>
   <script src="js/abi/transfer.js"></script>
+  <script src="js/abi/governor.js"></script>
+  <script src="js/abi/token.js"></script>
+  <script src="js/utils/governor.js"></script>
   <script>
+    var pagination = 10
+    var proposalOffset = 0
     var web3
+    var TYPEING_ID
+    const ETHERSCAN_URL = "https://rinkeby.etherscan.io/" // Polygon: https://polygonscan.com/, Rinkeby: https://rinkeby.etherscan.io/
+    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+    const CHAIN_NAME = "Rinkeby" // Polygon, Rinkeby
+    const CHAIN_ID = 4 // Polygon: 137, Rinkeby: 4
+    const NATIVE_CURRENCY = "RIN" // Polygon: MATIC, Rinkeby: RIN
+    const RPC_URLS = ["https://rpc.ankr.com/eth_rinkeby"] // Polygon: ['https://polygon-rpc.com/'], Rinkeby: ['https://rpc.ankr.com/eth_rinkeby']
+    const TOKEN_ADDRESS = "0x074DA668CE35dF9bc4CF66129c5A4302f15016f4" // Polygon: "0x8A1e48a84579F2239cB8383fC556b04D84b09E30"
+    const GOVERNOR_ADDRESS = "0xB4B732007b174379D3B410D18Bb22b2B287AC7AE" // Polygon: "0x4634764d6DbD533b27CC764ad595f5585C8f607d"
+    const SERVER_URL = "<%- serverUrl %>"
+    done()
 
-    window.onkeydown = function (e) {
-      console.log("code:" + e.which)
-      var keyin = document.getElementById("keyin")
+    async function getBlockAverageTime(span) {
+      running()
+      web3 = new Web3(window.ethereum)
+      const times = []
+      const currentNumber = await web3.eth.getBlockNumber()
+      const firstBlock = await web3.eth.getBlock(currentNumber - span)
+      let prevTimestamp = firstBlock.timestamp
 
-      if (e.keyCode === 8) {
-        keyin.innerHTML = keyin.innerHTML.slice(0, -1)
-        e.preventDefault()
-      } else if (e.code === "Enter") {
-        keyin.innerHTML += "<br/>"
-      } else {
-        console.log("code:" + e.code)
-        keyin.innerHTML += String.fromCharCode(e.which).toLowerCase()
+      for (let i = currentNumber - span + 1; i <= currentNumber; i++) {
+        const block = await web3.eth.getBlock(i)
+        let time = block.timestamp - prevTimestamp
+        prevTimestamp = block.timestamp
+        times.push(time)
       }
+      done()
+      return Math.round(times.reduce((a, b) => a + b) / times.length)
     }
 
-    setInterval(() => {
-      var typing = document.getElementById("typing")
-      if (typing.innerHTML === "_") {
-        typing.innerHTML = "&nbsp;\n"
-      } else {
-        typing.innerHTML = "_"
+    async function switchNetworkCheck() {
+      running()
+      web3 = new Web3(window.ethereum)
+      if (window.ethereum !== CHAIN_ID) {
+        try {
+          const results = await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: web3.utils.toHex(CHAIN_ID) }]
+          })
+        } catch (err) {
+          // This error code indicates that the chain has not been added to MetaMask
+          if (err.code === 4902) {
+            await web3.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainName: CHAIN_NAME,
+                  chainId: web3.utils.toHex(CHAIN_ID),
+                  nativeCurrency: {
+                    name: NATIVE_CURRENCY,
+                    decimals: 18,
+                    symbol: NATIVE_CURRENCY
+                  },
+                  rpcUrls: RPC_URLS
+                }
+              ]
+            })
+          }
+        }
       }
-    }, 1000)
+      done()
+    }
+
+    function done() {
+      clearInterval(TYPEING_ID)
+      TYPEING_ID = setInterval(() => {
+        var typing = document.getElementById("typing")
+        if (typing.innerHTML === "_") {
+          typing.innerHTML = "\n"
+        } else {
+          typing.innerHTML = "_"
+        }
+      }, 1000)
+    }
+
+    function running() {
+      clearInterval(TYPEING_ID)
+      TYPEING_ID = setInterval(() => {
+        var typing = document.getElementById("typing")
+        if (typing.innerHTML === "\\\n") {
+          typing.innerHTML = "|\n"
+        } else if (typing.innerHTML === "|\n") {
+          typing.innerHTML = "/\n"
+        } else if (typing.innerHTML === "/\n") {
+          typing.innerHTML = "-\n"
+        } else if (typing.innerHTML === "-\n") {
+          typing.innerHTML = "\\\n"
+        } else {
+          typing.innerHTML = "\\\n"
+        }
+      }, 200)
+    }
+
+    function printErrorLog(error, elementId) {
+      running()
+      if (error) {
+        var log = document.getElementById(elementId)
+        log.innerHTML = "<p>" + JSON.stringify(error.message) + "</p><br/>"
+        log.style.color = "red"
+        initCreateProposal(false)
+      }
+      done()
+    }
+
+    function createLoadMoreButton() {
+      running()
+      if (document.contains(document.getElementById("loadMoreProposalBlock"))) {
+        document.getElementById("loadMoreProposalBlock").remove()
+      }
+      var viewProposalsBlock = document.getElementById("viewProposalsBlock")
+
+      var loadMoreProposalBlock = document.createElement("div")
+      loadMoreProposalBlock.setAttribute("id", "loadMoreProposalBlock")
+      loadMoreProposalBlock.innerHTML =
+        '<hr style="border: 1px dotted green;" />'
+      viewProposalsBlock.appendChild(loadMoreProposalBlock)
+
+      var execute = document.createElement("button")
+      execute.setAttribute("id", "view_more_proposals")
+      execute.textContent = "读取更多"
+      execute.onclick = () => appendMoreProposal()
+      loadMoreProposalBlock.appendChild(execute)
+      done()
+    }
+
+    function createNoMoreText() {
+      running()
+      if (document.contains(document.getElementById("loadMoreProposalBlock"))) {
+        document.getElementById("loadMoreProposalBlock").remove()
+      }
+      var viewProposalsBlock = document.getElementById("viewProposalsBlock")
+
+      var loadMoreProposalBlock = document.createElement("div")
+      loadMoreProposalBlock.setAttribute("id", "loadMoreProposalBlock")
+      loadMoreProposalBlock.innerHTML =
+        '<hr style="border: 1px dotted green;" />'
+      loadMoreProposalBlock.innerHTML += "<p>已经到底，没有更多提案了</p>"
+      viewProposalsBlock.appendChild(loadMoreProposalBlock)
+      done()
+    }
+
+    function createExecuteButton(proposalData, proposalElement, serialId) {
+      running()
+      var execute = document.createElement("button")
+      execute.setAttribute("id", `${serialId}_execute`)
+      execute.textContent = "提案执行"
+      execute.onclick = () =>
+        executeProposal(proposalData, proposalElement, serialId)
+      proposalElement.appendChild(execute)
+      done()
+    }
+
+    function createQueuedButton(proposalData, proposalElement, serialId) {
+      running()
+      var execute = document.createElement("button")
+      execute.setAttribute("id", `${serialId}_queue`)
+      execute.textContent = "提案排程"
+      execute.onclick = () =>
+        queueProposal(proposalData, proposalElement, serialId)
+      proposalElement.appendChild(execute)
+      done()
+    }
+
+    async function runCreateProposal() {
+      running()
+      cleanLog()
+      createProposal().catch((error) => printErrorLog(error, "log"))
+      done()
+    }
+
+    async function createProposal() {
+      running()
+      const address = document.getElementById("createProposalAddress").value
+      const amount = document.getElementById("createProposalAmount").value
+      const nowTime = new Date()
+      const description =
+        "[" +
+        nowTime.toISOString().replace(/[^0-9]/g, "") +
+        "] " +
+        document.getElementById("createProposalDescription").value
+
+      document.getElementById("createProposalAddress").disabled = true
+      document.getElementById("createProposalAmount").disabled = true
+      document.getElementById("createProposalDescription").disabled = true
+      document.getElementById("createProposalFormSummit").disabled = true
+
+      web3 = new Web3(window.ethereum)
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const token = new web3.eth.Contract(tokenAbi(), TOKEN_ADDRESS)
+      const amountWei = await web3.utils.toWei(amount)
+
+      const encodedFunctionCall = web3.eth.abi.encodeFunctionCall(
+        mintInterface(),
+        [address, amountWei]
+      )
+
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+
+      const proposalId = await governor.methods
+        .propose([TOKEN_ADDRESS], [0], [encodedFunctionCall], description)
+        .call({ from: accountAddress }, (error) => printErrorLog(error, "log"))
+      console.log("proposalId: " + proposalId)
+
+      const gasPrice = await web3.eth.getGasPrice()
+      const gasEstimate = await governor.methods
+        .propose([TOKEN_ADDRESS], [0], [encodedFunctionCall], description)
+        .estimateGas({ from: accountAddress, gas: 50000000 })
+      console.log("gasEstimate: " + gasEstimate)
+      console.log("gasPrice: " + gasPrice)
+
+      var log = document.getElementById("log")
+      log.style.color = ""
+      log.innerHTML = "<p>上链中 ...</p>"
+
+      let transactionHash = "<none>"
+      const tx = await governor.methods
+        .propose([TOKEN_ADDRESS], [0], [encodedFunctionCall], description)
+        .send(
+          {
+            from: accountAddress,
+            gas: gasEstimate,
+            gasPrice
+          },
+          (error, hash) => {
+            printErrorLog(error, "log")
+            transactionHash = hash
+            console.log("hash:", hash)
+          }
+        )
+        .catch((sendError) => {
+          console.log(sendError)
+        })
+
+      console.log("transactionHash:", transactionHash)
+      await fetch(`${SERVER_URL}/api/scoreProposal/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposal_id: proposalId,
+          proposer: accountAddress,
+          receiver: address,
+          amount,
+          description,
+          transaction_hash: transactionHash,
+          propose_time: nowTime.getTime()
+        })
+      })
+
+      var log = document.getElementById("log")
+      log.innerHTML =
+        "<p>提案编号 (Proposal ID): " +
+        proposalId +
+        "</p><p>发放地址: " +
+        address +
+        "</p><p>发放数量: " +
+        amount +
+        "</p><p>提案描述: " +
+        description.slice(20) +
+        "</p>" +
+        '<a href="' +
+        ETHERSCAN_URL +
+        "tx/" +
+        transactionHash +
+        '" style="color:#59bfcf;" target="_blank">' +
+        ETHERSCAN_URL +
+        "tx/" +
+        transactionHash +
+        "</a>"
+
+      initCreateProposal(true)
+      done()
+    }
+    function i2hex(i) {
+      return ("0" + i.toString(16)).slice(-2)
+    }
+
+    async function queueProposal(proposalData, proposalElement, serialId) {
+      running()
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const utf8Desc = new TextEncoder().encode(proposalData.description)
+
+      const descriptionHash = web3.utils.keccak256(proposalData.description)
+      console.log(`proposalData.description:\"${proposalData.description}\"`)
+      console.log("descriptionHash:", descriptionHash)
+      const amountWei = await web3.utils.toWei(proposalData.amount)
+      const encodedFunctionCall = web3.eth.abi.encodeFunctionCall(
+        mintInterface(),
+        [proposalData.receiver, amountWei]
+      )
+      console.log("proposalData.receiver:", proposalData.receiver)
+      console.log("amountWei:", amountWei)
+      console.log("encodedFunctionCall:", encodedFunctionCall)
+
+      const gasPrice = await web3.eth.getGasPrice()
+      const gasEstimate = await governor.methods
+        .queue([TOKEN_ADDRESS], [0], [encodedFunctionCall], descriptionHash)
+        .estimateGas({ from: accountAddress, gas: 50000000 })
+
+      var log = document.createElement("div")
+      log.setAttribute("id", `${serialId}_queue_log`)
+      log.style.color = ""
+      log.innerHTML = "<p>上链中 ...</p>"
+      proposalElement.appendChild(log)
+      log = document.getElementById(`${serialId}_queue_log`)
+
+      let transactionHash = "<none>"
+      let error = null
+      const tx = await governor.methods
+        .queue([TOKEN_ADDRESS], [0], [encodedFunctionCall], descriptionHash)
+        .send(
+          {
+            from: accountAddress,
+            gas: gasEstimate,
+            gasPrice
+          },
+          (e, hash) => {
+            error = e
+            printErrorLog(error, `${serialId}_queue_log`)
+            transactionHash = hash
+            console.log("hash:", hash)
+          }
+        )
+        .catch((sendError) => {
+          console.log(sendError)
+        })
+
+      if (!error) {
+        log.style.color = ""
+        log.innerHTML =
+          '<p">排程成功!</p>' +
+          '<a href="' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          '" style="color:#59bfcf;" target="_blank">' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          "</a>"
+      }
+      done()
+    }
+
+    async function executeProposal(proposalData, proposalElement, serialId) {
+      running()
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const utf8Desc = new TextEncoder().encode(proposalData.description)
+
+      const descriptionHash = web3.utils.keccak256(proposalData.description)
+      const amountWei = await web3.utils.toWei(proposalData.amount)
+      const encodedFunctionCall = web3.eth.abi.encodeFunctionCall(
+        mintInterface(),
+        [proposalData.receiver, amountWei]
+      )
+
+      const gasPrice = await web3.eth.getGasPrice()
+      const gasEstimate = await governor.methods
+        .execute([TOKEN_ADDRESS], [0], [encodedFunctionCall], descriptionHash)
+        .estimateGas({ from: accountAddress, gas: 50000000 })
+
+      var log = document.createElement("div")
+      log.setAttribute("id", `${serialId}_execute_log`)
+      log.style.color = ""
+      log.innerHTML = "<p>上链中 ...</p>"
+      proposalElement.appendChild(log)
+      log = document.getElementById(`${serialId}_execute_log`)
+
+      let transactionHash = "<none>"
+      let error = null
+      const tx = await governor.methods
+        .execute([TOKEN_ADDRESS], [0], [encodedFunctionCall], descriptionHash)
+        .send(
+          {
+            from: accountAddress,
+            gas: gasEstimate,
+            gasPrice
+          },
+          (e, hash) => {
+            error = e
+            printErrorLog(error, `${serialId}_execute_log`)
+            transactionHash = hash
+            console.log("hash:", hash)
+          }
+        )
+        .catch((sendError) => {
+          console.log(sendError)
+        })
+
+      if (!error) {
+        log.style.color = ""
+        log.innerHTML =
+          '<p">执行成功!</p>' +
+          '<a href="' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          '" style="color:#59bfcf;" target="_blank">' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          "</a>"
+      }
+      done()
+    }
+
+    async function castVote(proposalId, vote, serialId, proposalElement) {
+      running()
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+
+      const gasPrice = await web3.eth.getGasPrice()
+      const gasEstimate = await governor.methods
+        .castVote(proposalId, vote)
+        .estimateGas({ from: accountAddress, gas: 50000000 })
+
+      var log = document.createElement("div")
+      log.setAttribute("id", `${serialId}_log`)
+      log.style.color = ""
+      log.innerHTML = "<p>上链中 ...</p>"
+      proposalElement.appendChild(log)
+      log = document.getElementById(`${serialId}_log`)
+
+      let transactionHash = "<none>"
+      let error = null
+      const tx = await governor.methods
+        .castVote(proposalId, vote)
+        .send(
+          {
+            from: accountAddress,
+            gas: gasEstimate,
+            gasPrice
+          },
+          (e, hash) => {
+            error = e
+            printErrorLog(error, `${serialId}_log`)
+            transactionHash = hash
+            console.log("hash:", hash)
+          }
+        )
+        .catch((sendError) => {
+          console.log(sendError)
+        })
+
+      if (!error) {
+        log.style.color = ""
+        log.innerHTML =
+          '<p">投票成功! ' +
+          '</p><p>我投 "' +
+          voteState(vote).text +
+          '"</p>' +
+          '<a href="' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          '" style="color:#59bfcf;" target="_blank">' +
+          ETHERSCAN_URL +
+          "tx/" +
+          transactionHash +
+          "</a>"
+      }
+      done()
+    }
+
+    async function initGovernParameters(cleanup) {
+      running()
+      var governParametersBlock = document.getElementById(
+        "governParametersBlock"
+      )
+      governParametersBlock.innerHTML = "<h3>治理参数</h3>"
+
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const token = new web3.eth.Contract(erc20Abi(), TOKEN_ADDRESS)
+      const symbol = await token.methods.symbol().call()
+      const decimals = await token.methods.decimals().call()
+
+      governParametersBlock.innerHTML += `<h4>积分合约 <small>(ERC20Votes)</small></h4>`
+      const tokenName = await token.methods.name().call()
+      governParametersBlock.innerHTML += `<font size="2">积分名称: ${tokenName}</font><br/>`
+      governParametersBlock.innerHTML += `<font size="2">积分代号: ${symbol}</font><br/>`
+      const totalSupply = await token.methods.totalSupply().call()
+      governParametersBlock.innerHTML += `<font size="2">总发行量: ${web3.utils.fromWei(
+        totalSupply,
+        "ether"
+      )} $${symbol}</font><br/>`
+
+      governParametersBlock.innerHTML += `<a href=\"${ETHERSCAN_URL}token/${TOKEN_ADDRESS}\" style="color:#59bfcf;" target="_blank">代币合约链上信息</a><br/><br/>`
+
+      governParametersBlock.innerHTML += `<h4>投票合约 <small>(OpenZeppelin Governor)</small></h4>`
+
+      const governorName = await governor.methods.name().call()
+      governParametersBlock.innerHTML += `<font size="2">合约名称: ${governorName}</font><br/>`
+      const votingDelay = await governor.methods.votingDelay().call()
+      const avgTime = await getBlockAverageTime(2)
+      governParametersBlock.innerHTML += `<font size="2">投票延迟: ${votingDelay} 区块 (约 ${
+        votingDelay * avgTime
+      } 秒)</font><br/>`
+      const votingPeriod = await governor.methods.votingPeriod().call()
+      governParametersBlock.innerHTML += `<font size="2">投票期间: ${votingPeriod} 区块 (约 ${
+        (votingPeriod * avgTime) / 60.0
+      } 分)</font><br/>`
+      const proposalThresholdWei = await governor.methods
+        .proposalThreshold()
+        .call()
+
+      governParametersBlock.innerHTML += `<font size="2">提案门槛: ${web3.utils.fromWei(
+        proposalThresholdWei,
+        "ether"
+      )} $${symbol}</font><br/>`
+      const quorumDenominator = await governor.methods
+        .quorumDenominator()
+        .call()
+      const quorumNumerator = await governor.methods.quorumNumerator().call()
+      const quorumRatio =
+        (Number(quorumNumerator) + 0.0) / (Number(quorumDenominator) + 0.0)
+      governParametersBlock.innerHTML += `<font size="2">总投票有效门槛: ${Number(
+        100 * quorumRatio
+      )}%</font><br/>`
+      const tokenAddress = await governor.methods.token().call()
+      const governorVersion = await governor.methods.version().call()
+      governParametersBlock.innerHTML += `<font size="2">合约版本: v${governorVersion}</font><br/>`
+
+      governParametersBlock.innerHTML += `<a href=\"${ETHERSCAN_URL}address/${GOVERNOR_ADDRESS}\" style="color:#59bfcf;" target="_blank">投票合约链上信息</a><br/><br/>`
+      done()
+    }
+
+    async function initSetDelegates(cleanup) {
+      running()
+      var setDelegatesBlock = document.getElementById("setDelegatesBlock")
+      setDelegatesBlock.innerHTML = "<h3>投票代理人变更</h3>"
+
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const token = new web3.eth.Contract(erc20Abi(), TOKEN_ADDRESS)
+      const symbol = await token.methods.symbol().call()
+
+      cleanUpSetDelegates(cleanup)
+      done()
+    }
+
+    function cleanUpSetDelegates(cleanup) {
+      running()
+      if (cleanup) {
+        var delegateOtherAddress =
+          document.getElementById("delegateOtherAddress") || {}
+        delegateOtherAddress.value = ""
+      }
+      done()
+    }
+
+    async function getMoreProposals() {
+      running()
+      const ret = await fetch(`${SERVER_URL}/api/scoreProposal/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          offset: proposalOffset,
+          limit: pagination
+        })
+      })
+      const { data } = await ret.json()
+      console.log("data:", data)
+      if (data.length > 0) proposalOffset = proposalOffset + pagination
+      done()
+      return data
+    }
+
+    async function appendMoreProposal() {
+      running()
+      var execute = document.getElementById("view_more_proposals")
+      execute.disabled = true
+
+      var viewProposalsBlock = document.getElementById("viewProposalsBlock")
+
+      const data = await getMoreProposals()
+      if (data.length > 0) {
+        web3 = new Web3(window.ethereum)
+        const accountsAddr = await web3.eth.requestAccounts()
+        const accountAddress = accountsAddr[0]
+        const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+        const token = new web3.eth.Contract(erc20Abi(), TOKEN_ADDRESS)
+        const symbol = await token.methods.symbol().call()
+        const avgTime = await getBlockAverageTime(10)
+
+        data.forEach((p, index) =>
+          showProposal(
+            web3,
+            p,
+            index,
+            governor,
+            accountAddress,
+            avgTime,
+            symbol
+          )
+        )
+        setTimeout(() => {
+          var execute = document.getElementById("view_more_proposals")
+          execute.disabled = false
+        }, (data.length + 1) * 1500 + 50)
+      } else {
+        createNoMoreText()
+      }
+      done()
+    }
+
+    async function initViewProposals(cleanup) {
+      running()
+      var viewProposalsBlock = document.getElementById("viewProposalsBlock")
+      viewProposalsBlock.innerHTML = "<h3>提案一览</h3>"
+
+      const data = await getMoreProposals()
+
+      web3 = new Web3(window.ethereum)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      const token = new web3.eth.Contract(erc20Abi(), TOKEN_ADDRESS)
+      const symbol = await token.methods.symbol().call()
+      const avgTime = await getBlockAverageTime(10)
+
+      data.forEach((p, index) =>
+        showProposal(web3, p, index, governor, accountAddress, avgTime, symbol)
+      )
+
+      setTimeout(() => {
+        if (document.contains(document.getElementById("view_more_proposals"))) {
+          var execute = document.getElementById("view_more_proposals")
+          execute.disabled = false
+        } else {
+          setTimeout(() => {
+            if (
+              document.contains(document.getElementById("view_more_proposals"))
+            ) {
+              var execute = document.getElementById("view_more_proposals")
+              execute.disabled = false
+            }
+          }, 2 * data.length * 1500 + 50)
+        }
+      }, (data.length + 1) * 1500 + 50)
+      done()
+    }
+
+    function showProposal(
+      web3,
+      p,
+      index,
+      governor,
+      accountAddress,
+      avgTime,
+      symbol
+    ) {
+      running()
+      setTimeout(async () => {
+        let error = null
+        let state = null
+
+        try {
+          state = await governor.methods
+            .state(p.proposal_id)
+            .call({ from: accountAddress })
+        } catch (e) {
+          error = e
+          console.error("error:", error)
+        }
+        if (!error) {
+          console.log("proposal_id:", p.proposal_id)
+          const pState = proposalState(state)
+          console.log("state:", state)
+
+          const serialId = `proposal_${p.serial_id}`
+          var proposal = document.createElement("div")
+          proposal.id = serialId
+          viewProposalsBlock.appendChild(proposal)
+          proposal = document.getElementById(serialId)
+          proposal.innerHTML =
+            `<hr style=\"border: 1px dotted green;\" /><h5>${pState.emoji} Proposal #${p.serial_id}</h5>` +
+            `<font size=\"2\">提案人: ${p.proposer}<br/>` +
+            `提案状态: ${pState.text}<br/>` +
+            `提案编号: ${p.proposal_id}</font><br/>`
+
+          const snapshot = await governor.methods
+            .proposalSnapshot(p.proposal_id)
+            .call()
+          const startTime = await web3.eth.getBlock(snapshot)
+          const startTimestamp = 1000 * startTime.timestamp
+          const startTimeSec = new Date(startTimestamp).getSeconds()
+          console.log("snapshot:", snapshot)
+          console.log("startTimestamp:", startTimestamp)
+          console.log("startTimeSec:", startTimeSec)
+
+          proposal.innerHTML +=
+            `<font size=\"2\">提案时间: ${new Date(
+              1000 * startTime.timestamp
+            ).toLocaleString()} (区块: ${snapshot})<br/>` +
+            `提案操作: 对 ${p.receiver} 发放积分 ${p.amount} $${symbol}<br/>` +
+            `提案说明: ${p.description.slice(20)}</font><br/>`
+
+          const ddl = await governor.methods
+            .proposalDeadline(p.proposal_id)
+            .call()
+          console.log("ddl:", ddl)
+          let ddlTime = null
+          try {
+            ddlTime = await web3.eth.getBlock(ddl)
+          } catch (e) {}
+          console.log("ddlTime:", ddlTime)
+
+          let ddlTimestamp = 0
+          let ddlEstimateMode = ""
+          if (ddlTime === null) {
+            console.log(
+              "(ddl - snapshot) * Block avgtime:",
+              (ddl - snapshot) * avgTime
+            )
+            const ddlToStartSec = new Date(startTimestamp).setSeconds(
+              startTimeSec + (ddl - snapshot) * avgTime
+            )
+            console.log("ddlToStartSec:", ddlToStartSec)
+            const ddlTimeSec = new Date(ddlToStartSec)
+            console.log("ddlTimeSec:", ddlTimeSec)
+            ddlEstimateMode = "约剩"
+            ddlTimestamp = ddlTimeSec.getTime()
+          } else {
+            ddlEstimateMode = "估计"
+            ddlTimestamp = 1000 * ddlTime.timestamp
+          }
+
+          console.log("ddl:", ddl)
+          console.log("ddlTime:", ddlTime)
+          let timeover = ""
+          let voteResultStr = "投票结果"
+          const isOver = ddlTimestamp - new Date().getTime() < 0
+          if (isOver && ddlTime !== null) {
+            timeover = "(已结束)"
+            voteResultStr = "最终" + voteResultStr
+            ddlModeStr = "投票"
+          } else {
+            voteResultStr = "最新" + voteResultStr
+            ddlModeStr = "估计"
+          }
+          const remainMins = (ddlTimestamp - new Date().getTime()) / 60000.0
+          let remainMinsStr = ""
+          if (remainMins > 0) {
+            remainMinsStr = `, ${ddlEstimateMode} ${remainMins.toFixed(0)} 分`
+          } else if (remainMins <= 0 && ddlTime === null) {
+            remainMinsStr = `, 即将完成`
+          }
+
+          proposal.innerHTML += `<font size=\"2\">${ddlModeStr}截止时间: ${new Date(
+            ddlTimestamp
+          ).toLocaleString()} (区块: ${ddl}${remainMinsStr}) ${timeover}</font><br/>`
+
+          const votes = await governor.methods
+            .proposalVotes(p.proposal_id)
+            .call()
+
+          const totalVotes = web3.utils
+            .toBN(votes.forVotes)
+            .add(web3.utils.toBN(votes.againstVotes))
+            .add(web3.utils.toBN(votes.abstainVotes))
+
+          console.log("votes:", votes)
+          console.log("totalVotes:", totalVotes)
+
+          const hasVoted = await governor.methods
+            .hasVoted(p.proposal_id, accountAddress)
+            .call()
+          console.log("hasVoted:", hasVoted)
+          const myVotesWei = await governor.methods
+            .getVotes(accountAddress, snapshot)
+            .call()
+          console.log("myVotesWei:", myVotesWei)
+          const quorum = await governor.methods.quorum(snapshot).call()
+
+          let hasVoteStr = "(未投票)"
+          if (hasVoted) {
+            hasVoteStr = "(已投票)"
+          }
+
+          console.log(startTime.timestamp)
+
+          proposal.innerHTML +=
+            `<font size=\"2\">${voteResultStr}: 同意: ${Web3.utils.fromWei(
+              votes.forVotes,
+              "ether"
+            )}, 反对: ${Web3.utils.fromWei(
+              votes.againstVotes,
+              "ether"
+            )}, 弃权: ${Web3.utils.fromWei(votes.abstainVotes, "ether")}<br/>` +
+            `总投票数有效门槛: ${Web3.utils.fromWei(
+              totalVotes,
+              "ether"
+            )}/${Web3.utils.fromWei(quorum, "ether")}<br/>` +
+            `我的投票权： ${Web3.utils.fromWei(
+              myVotesWei,
+              "ether"
+            )} ${hasVoteStr}<br/></font><br/>`
+
+          var voteAction = document.createElement("span")
+          var forVotes = document.createElement("button")
+          forVotes.textContent = "同意"
+          forVotes.onclick = () =>
+            castVote(p.proposal_id, 1, serialId, proposal)
+          var againstVotes = document.createElement("button")
+          againstVotes.textContent = "反对"
+          againstVotes.onclick = () =>
+            castVote(p.proposal_id, 0, serialId, proposal)
+          var abstainVotes = document.createElement("button")
+          abstainVotes.textContent = "弃权"
+          abstainVotes.onclick = () =>
+            castVote(p.proposal_id, 2, serialId, proposal)
+
+          if (!hasVoted && !isOver) {
+            voteAction.appendChild(forVotes)
+            voteAction.appendChild(document.createTextNode("  "))
+            voteAction.appendChild(againstVotes)
+            voteAction.appendChild(document.createTextNode("  "))
+            voteAction.appendChild(abstainVotes)
+            proposal.appendChild(voteAction)
+          }
+
+          if (pState.en === "Succeeded") {
+            createQueuedButton(p, proposal, serialId)
+          }
+
+          if (pState.en === "Queued") {
+            createExecuteButton(p, proposal, serialId)
+          }
+        }
+        createLoadMoreButton()
+      }, index * 1500 + 50)
+      done()
+    }
+
+    function initCreateProposal(cleanup) {
+      running()
+      document.getElementById("createProposalAddress").disabled = false
+      document.getElementById("createProposalAmount").disabled = false
+      document.getElementById("createProposalDescription").disabled = false
+      document.getElementById("createProposalFormSummit").disabled = false
+      if (cleanup) {
+        document.getElementById("createProposalAddress").value = ""
+        document.getElementById("createProposalAmount").value = ""
+        document.getElementById("createProposalDescription").value = ""
+      }
+      done()
+    }
+
+    function cleanLog() {
+      running()
+      var log = document.getElementById("log")
+      log.innerHTML = ""
+      done()
+    }
 
     async function Connect() {
+      running()
       const accounts = await window.ethereum.request({
         method: "eth_requestAccounts"
       })
+      await switchNetworkCheck()
       web3 = new Web3(window.ethereum)
-      let decimals = web3.utils.toBN(18)
       var account = document.getElementById("account")
-      const accountAddress = await web3.eth.requestAccounts()
-      account.innerHTML = "钱包: " + accountAddress[0]
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      account.innerHTML = "钱包: " + accountAddress + ` (${CHAIN_NAME})`
+      if (CHAIN_ID === 4) {
+        account.innerHTML +=
+          "<br/><small>※ 测试代币不够的话，每日可在各水龙头领 0.1 测试币</small>"
+        account.innerHTML +=
+          " <button onclick=\"window.open('https://rinkebyfaucet.com','_blank')\">水龙头1</button>"
+        account.innerHTML +=
+          " <button onclick=\"window.open('https://faucets.chain.link/rinkeby','_blank')\">水龙头2</button>"
+      }
       connectWallet = document.getElementById("connectWallet")
       connectWallet.remove()
-      const tokenAddress = "0x5D8C3E43EBd84d63CfFD00e473ba3Fdb5920CDC1"
-      const balance = await web3.eth.getBalance(accountAddress[0])
-      const tokenInst = new web3.eth.Contract(erc20Abi(), tokenAddress)
-      const totalSupply = await tokenInst.methods.totalSupply().call()
-      const tokenAmount = await tokenInst.methods
-        .balanceOf(accountAddress[0])
-        .call()
+      const balance = await web3.eth.getBalance(accountAddress)
+      const token = new web3.eth.Contract(tokenAbi(), TOKEN_ADDRESS)
+      const decimals = web3.utils.toBN(await token.methods.decimals().call())
+      const totalSupply = await token.methods.totalSupply().call()
+      const tokenAmount = await token.methods.balanceOf(accountAddress).call()
       const myToken = web3.utils
         .toBN(tokenAmount)
         .div(web3.utils.toBN(10).pow(decimals))
       const totalSupplyToken = web3.utils
         .toBN(totalSupply)
         .div(web3.utils.toBN(10).pow(decimals))
-      console.log()
+      const symbol = await token.methods.symbol().call()
 
       var tokens = document.getElementById("tokens")
-      tokens.innerHTML =
-        "我有 " +
-        myToken +
-        " 个 $DDAO，当前总发行 " +
-        totalSupplyToken +
-        " $DDAO，我占比 " +
-        (Number(100 * myToken) / Number(totalSupplyToken)).toFixed(2) +
-        "%"
+      tokens.innerHTML = `<p>我的积分: ${myToken} $${symbol} <small>(占比 ${(
+        Number(100 * myToken) / Number(totalSupplyToken)
+      ).toFixed(2)}%) 总发行: ${totalSupplyToken} $${symbol}</small></p>`
 
-      tokens
+      const delegates = await token.methods.delegates(accountAddress).call()
+
+      let delegateAddress = "无"
+      const noDelegates = delegates === ZERO_ADDRESS
+      if (!noDelegates) {
+        delegateAddress = delegates
+        if (delegates === accountAddress) {
+          delegateAddress = "自己"
+        }
+      }
+      tokens.innerHTML += `<p style=\"font-size: 12px;\">投票代理人: ${delegateAddress}</p>`
+
+      let extra = ""
+
+      const currentBlock = await web3.eth.getBlockNumber()
+      const governor = new web3.eth.Contract(governorAbi(), GOVERNOR_ADDRESS)
+      let getVotesWei = -1
+      for (var i = 0; i < 50; i++) {
+        try {
+          getVotesWei = await governor.methods
+            .getVotes(accountAddress, currentBlock - i)
+            .call()
+        } catch (e) {}
+        if (getVotesWei >= 0) break
+      }
+
+      const getVotes = web3.utils
+        .toBN(getVotesWei)
+        .div(web3.utils.toBN(10).pow(decimals))
+      if (getVotes > myToken) {
+        extra = `[代理: ${getVotes - myToken} $${symbol}]`
+      }
+      const voteRatio = ` (${
+        Number(100 * getVotes) / Number(totalSupplyToken).toFixed(2)
+      } %)`
+      tokens.innerHTML += `<p style=\"font-size: 12px;\">我的投票权: ${getVotes} $${symbol}${voteRatio} ${extra}</p>`
+
+      if (noDelegates) {
+        tokens.innerHTML +=
+          '<p style="color:red;">※ 未指定投票代理人的投票不会计入，请点击下方 "投票代理人变更"</p>'
+      }
+
+      if (myToken > 0) {
+        createGovButtons()
+      } else {
+        var tokens = document.getElementById("tokens")
+        tokens.innerHTML += `<p>请到 Discord 留下钱包地址，将有人提案给予测试积分. <a style="color:#59bfcf;" target="_blank" href=\"https://discord.com/channels/995771542631890944/998592435678617600\">Discord 网址</a></p>`
+      }
+
+      done()
     }
 
-    async function Transfer() {
-      let tokenAddress = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
-      let toAddress = "0x8Df70546681657D6FFE227aB51662e5b6e831B7A"
-      let fromAddress = "0x7EA1EaA27b313D04D359bF3e654FE927376e31Bb"
-      // Use BigNumber
-      let decimals = web3.utils.toBN(15)
-      let amount = web3.utils.toBN(1)
-      let minABI = trasferAbi()
-      // Get ERC20 Token contract instance
-      let contract = new web3.eth.Contract(minABI, tokenAddress)
-      // calculate ERC20 token amount
-      let value = amount.mul(web3.utils.toBN(10).pow(decimals))
-      console.log(`value:${value}`)
-      // call transfer function
-      contract.methods
-        .transfer(toAddress, value)
-        .send({ from: fromAddress })
-        .on("transactionHash", function (hash) {
-          console.log(hash)
+    async function startViewProposals() {
+      running()
+      document.getElementById("createProposalForm").hidden = true
+      document.getElementById("viewProposalsBlock").hidden = false
+      document.getElementById("governParametersBlock").hidden = true
+      document.getElementById("setDelegatesBlock").hidden = true
+      await initViewProposals(true)
+      cleanLog()
+      done()
+    }
+
+    function startCreateProposal() {
+      running()
+      document.getElementById("createProposalForm").hidden = false
+      document.getElementById("viewProposalsBlock").hidden = true
+      document.getElementById("governParametersBlock").hidden = true
+      document.getElementById("setDelegatesBlock").hidden = true
+      initCreateProposal(true)
+      cleanLog()
+      done()
+    }
+
+    async function delegateOther() {
+      running()
+      await delegate(document.getElementById("delegateOtherAddress").value)
+      done()
+    }
+
+    async function delegate(delegateAddress) {
+      running()
+      web3 = new Web3(window.ethereum)
+      const token = new web3.eth.Contract(tokenAbi(), TOKEN_ADDRESS)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+
+      const gasPrice = await web3.eth.getGasPrice()
+      const gasEstimate = await token.methods
+        .delegate(delegateAddress)
+        .estimateGas({ from: accountAddress, gas: 50000000 })
+      console.log("gasEstimate: " + gasEstimate)
+      console.log("gasPrice: " + gasPrice)
+
+      var setDelegatesBlock = document.getElementById("setDelegatesBlock")
+
+      var log = document.createElement("div")
+      log.setAttribute("id", "delegate_log")
+      setDelegatesBlock.appendChild(log)
+
+      const results = await token.methods
+        .delegate(delegateAddress)
+        .call({ from: accountAddress }, (error) =>
+          printErrorLog(error, "delegate_log")
+        )
+      console.log("delegate result: " + results)
+
+      log.style.color = ""
+      log.innerHTML = "<p>上链中 ...</p>"
+
+      let transactionHash = "<none>"
+      const tx = await token.methods
+        .delegate(delegateAddress)
+        .send(
+          {
+            from: accountAddress,
+            gas: gasEstimate,
+            gasPrice
+          },
+          (error, hash) => {
+            printErrorLog(error, "delegate_log")
+            transactionHash = hash
+            console.log("hash:", hash)
+          }
+        )
+        .catch((sendError) => {
+          console.log(sendError)
         })
+
+      log = document.getElementById("delegate_log")
+      const delegates = await token.methods.delegates(accountAddress).call()
+      let newDelegateAddress = delegates
+      if (delegates === accountAddress) {
+        newDelegateAddress = `自己 (${delegates})`
+      }
+      if (delegates === ZERO_ADDRESS) {
+        newDelegateAddress = "无"
+      }
+      log.style.color = ""
+      log.innerHTML =
+        "<p>变更成功!</p><p>新投票代理人地址: " +
+        newDelegateAddress +
+        "</p>" +
+        '<a href="' +
+        ETHERSCAN_URL +
+        "tx/" +
+        transactionHash +
+        '" style="color:#59bfcf;" target="_blank">' +
+        ETHERSCAN_URL +
+        "tx/" +
+        transactionHash +
+        "</a>"
+      await cleanUpSetDelegates(true)
+      done()
+    }
+
+    async function startSetDelegates() {
+      running()
+      document.getElementById("createProposalForm").hidden = true
+      document.getElementById("viewProposalsBlock").hidden = true
+      document.getElementById("governParametersBlock").hidden = true
+      document.getElementById("setDelegatesBlock").hidden = false
+      await initSetDelegates(true)
+      cleanLog()
+
+      var setDelegatesBlock = document.getElementById("setDelegatesBlock")
+
+      web3 = new Web3(window.ethereum)
+      const token = new web3.eth.Contract(tokenAbi(), TOKEN_ADDRESS)
+      const accountsAddr = await web3.eth.requestAccounts()
+      const accountAddress = accountsAddr[0]
+      const delegates = await token.methods.delegates(accountAddress).call()
+      let delegateAddress = delegates
+      if (delegates === ZERO_ADDRESS) {
+        delegateAddress = "无"
+      }
+      if (delegates === accountAddress) {
+        delegateAddress = `自己 (${accountAddress})`
+      }
+
+      if (delegates !== accountAddress) {
+        var selfDelegate = document.createElement("button")
+        selfDelegate.setAttribute("id", "selfDelegate")
+        selfDelegate.textContent = "自我代理"
+        selfDelegate.onclick = () => delegate(accountAddress)
+        setDelegatesBlock.appendChild(selfDelegate)
+        setDelegatesBlock.appendChild(document.createTextNode(" "))
+      }
+
+      var nowDelegates = document.createElement("p")
+      nowDelegates.setAttribute("id", "nowDelegates")
+      nowDelegates.textContent = `当前投票代理人: ${delegateAddress}`
+      setDelegatesBlock.appendChild(nowDelegates)
+
+      var delegateOther = document.createElement("div")
+      delegateOther.innerHTML =
+        '<span>代理人地址:&nbsp;<input id="delegateOtherAddress" type="text" />&nbsp;<button onclick="delegateOther()">指定代理人</button></span><br/>'
+
+      setDelegatesBlock.appendChild(delegateOther)
+      done()
+    }
+
+    async function startGovernParameters() {
+      running()
+      document.getElementById("createProposalForm").hidden = true
+      document.getElementById("viewProposalsBlock").hidden = true
+      document.getElementById("governParametersBlock").hidden = false
+      document.getElementById("setDelegatesBlock").hidden = true
+      await initGovernParameters(true)
+      cleanLog()
+      done()
+    }
+
+    function createGovButtons() {
+      running()
+      const createProposal = document.getElementById("createProposal")
+      const viewProposals = document.getElementById("viewProposals")
+      const governParameters = document.getElementById("governParameters")
+      const setDelegates = document.getElementById("setDelegates")
+      createProposal.hidden = false
+      viewProposals.hidden = false
+      governParameters.hidden = false
+      setDelegates.hidden = false
+      done()
     }
   </script>
 </html>

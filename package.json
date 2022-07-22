@@ -4,8 +4,8 @@
   "description": "I hate almost all web3 projects have a fancy frontend design.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node index.js prod",
+    "dev": "nodemon index.js dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -22,9 +22,11 @@
   },
   "homepage": "https://github.com/fatfingererr/govzero#readme",
   "dependencies": {
+    "body-parser": "^1.20.0",
     "browserify": "^17.0.0",
     "ejs": "^3.1.8",
     "express": "^4.18.1",
+    "sqlite3": "^5.0.9",
     "web3": "^1.7.4"
   }
 }
