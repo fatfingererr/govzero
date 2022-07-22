@@ -1091,13 +1091,14 @@
     }
 
     async function startViewProposals() {
+      proposalOffset = 0
       running()
+      cleanLog()
       document.getElementById("createProposalForm").hidden = true
       document.getElementById("viewProposalsBlock").hidden = false
       document.getElementById("governParametersBlock").hidden = true
       document.getElementById("setDelegatesBlock").hidden = true
       await initViewProposals(true)
-      cleanLog()
       done()
     }
 

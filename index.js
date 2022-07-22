@@ -1,6 +1,7 @@
 var path = require("path")
 var express = require("express")
 var bodyParser = require("body-parser")
+var sqlite3 = require("sqlite3").verbose()
 
 var app = express()
 var db = require("./db")
@@ -25,6 +26,7 @@ app.get("/", function (req, res) {
   })
 })
 app.get("/api/scoreProposal/count", (req, res, next) => {
+  var db = new sqlite3.Database("./main.db")
   var sql = "SELECT * FROM scoreProposal ORDER BY serial_id DESC LIMIT 1;"
   db.get(sql, (err, row) => {
     if (err) {
@@ -44,11 +46,12 @@ app.get("/api/scoreProposal/count", (req, res, next) => {
 })
 
 app.post("/api/scoreProposal/", (req, res, next) => {
-  var errors = []
   
+  var errors = []
+
   const { offset, limit } = req.body
-  console.log('offset:', offset)
-  console.log('limit:', limit)
+  console.log("offset:", offset)
+  console.log("limit:", limit)
   if (offset === undefined) errors.push("No offset specified")
   if (limit === undefined) errors.push("No limit specified")
   if (errors.length) {
@@ -56,14 +59,14 @@ app.post("/api/scoreProposal/", (req, res, next) => {
     return
   }
   var sql = `SELECT * FROM scoreProposal ORDER BY serial_id DESC LIMIT ${limit} OFFSET ${offset}` //  OFFSET ${offset} LIMIT ${limit}
-  console.log('sql:', sql)
+  console.log("sql:", sql)
+  var db = new sqlite3.Database("./main.db")
   db.all(sql, function (err, data) {
-    
     if (err) {
       res.status(400).json({ error: err.message })
       return
     }
-    console.log('data:', data)
+    console.log("data:", data)
     res.status(200).json({
       message: "success",
       data
@@ -81,6 +84,7 @@ app.post("/api/scoreProposal/delete", (req, res, next) => {
     return
   }
   var sql = `DELETE FROM scoreProposal WHERE serial_id = ${serial_id}`
+  var db = new sqlite3.Database("./main.db")
   db.run(sql, function (err, result) {
     if (err) {
       res.status(400).json({ error: err.message })
@@ -129,15 +133,19 @@ app.post("/api/scoreProposal/create", (req, res, next) => {
     propose_time
   ]
   console.log("params:", JSON.stringify(params))
+
+  var db = new sqlite3.Database("./main.db")
   db.run(sql, params, function (err) {
     console.log("err:", JSON.stringify(err))
     if (err) {
       res.status(400).json({ error: err.message })
+      db.close()
       return
     }
     res.json({
       message: "success"
     })
+    db.close()
   })
 })
 
