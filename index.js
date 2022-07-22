@@ -130,6 +130,7 @@ app.post("/api/scoreProposal/create", (req, res, next) => {
   ]
   console.log("params:", JSON.stringify(params))
   db.run(sql, params, function (err) {
+    console.log("err:", JSON.stringify(err))
     if (err) {
       res.status(400).json({ error: err.message })
       return
