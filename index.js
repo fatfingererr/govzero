@@ -1,10 +1,14 @@
+require("dotenv").config()
+
 var path = require("path")
 var express = require("express")
 var bodyParser = require("body-parser")
-var sqlite3 = require("sqlite3").verbose()
 
 var app = express()
-var db = require("./db")
+require("./db")
+
+mintProposalModel = require("./models/proposal/mint/model")
+holderModel = require("./models/holder/model")
 
 const port = process.env.PORT || 3000
 
@@ -17,89 +21,97 @@ app.use(bodyParser.json())
 
 const mode = process.argv[2]
 let serverUrl = `http://localhost:${port}`
-if (mode === "prod") serverUrl = "https://ddao.herokuapp.com"
+if (mode === "prod") serverUrl = process.env.SERVER_URL
 
 app.get("/", function (req, res) {
   res.render("index", {
-    daoname: "DDAO",
+    daoname: process.env.DAO_NAME,
     serverUrl,
-    token: '0x93E787174c3e05fa5dEdd6Bc904bDcAC5031aDcE',
-    governor: '0x53F4023713852E1De3365f4c99125330D2823A5e'
-  })
-})
-app.get("/api/scoreProposal/count", (req, res, next) => {
-  var db = new sqlite3.Database("./main.db")
-  var sql = "SELECT * FROM scoreProposal ORDER BY serial_id DESC LIMIT 1;"
-  db.get(sql, (err, row) => {
-    if (err) {
-      res.status(400).json({ error: err.message })
-      return
-    }
-    let count = 0
-    if (row !== undefined) {
-      count = row.serial_id
-    }
-    console.log("row:", JSON.stringify(row))
-    res.json({
-      message: "success",
-      count
-    })
+    token: process.env.TOKEN_ADDRESS,
+    governor:  process.env.GOVERNOR_ADDRESS,
+    governorType: process.env.GOVERNOR_TYPE
   })
 })
 
-app.post("/api/scoreProposal/", (req, res, next) => {
-  
+app.post("/api/holder/update", (req, res, next) => {
+  holderModel
+    .updateHolder(req.body)
+    .then(() =>
+      res.json({
+        message: "success"
+      })
+    )
+    .catch((err) => res.status(400).json({ message: err }))
+})
+
+app.post("/api/holder/all", (req, res, next) => {
+  holderModel
+    .getAllHolders()
+    .then((holders) =>
+      res.json({
+        message: "success",
+        data: holders
+      })
+    )
+    .catch((err) => res.status(400).json({ error: err.message }))
+})
+
+app.post("/api/proposal/update", (req, res, next) => {
   var errors = []
+  if (errors.length) {
+    res.status(400).json({ error: errors.join(",") })
+    return
+  }
+  mintProposalModel
+    .updateProposal(req.body)
+    .then(() =>
+      res.json({
+        message: "success"
+      })
+    )
+    .catch((err) => res.status(400).json({ error: err.message }))
+})
 
+
+app.post("/api/proposal/find", (req, res, next) => {
+  var errors = []
+  if (req.body.proposalId === undefined) errors.push("No proposal id specified")
+  if (errors.length) {
+    res.status(400).json({ error: errors.join(",") })
+    return
+  }
+  mintProposalModel
+    .findProposal(req.body)
+    .then((proposal) =>
+      res.json({
+        message: "success",
+        data: proposal
+      })
+    )
+    .catch((err) => res.status(400).json({ error: err.message }))
+})
+
+app.post("/api/proposal/", (req, res, next) => {
+  var errors = []
   const { offset, limit } = req.body
-  console.log("offset:", offset)
-  console.log("limit:", limit)
   if (offset === undefined) errors.push("No offset specified")
   if (limit === undefined) errors.push("No limit specified")
   if (errors.length) {
     res.status(400).json({ error: errors.join(",") })
     return
   }
-  var sql = `SELECT * FROM scoreProposal ORDER BY serial_id DESC LIMIT ${limit} OFFSET ${offset}` //  OFFSET ${offset} LIMIT ${limit}
-  console.log("sql:", sql)
-  var db = new sqlite3.Database("./main.db")
-  db.all(sql, function (err, data) {
-    if (err) {
-      res.status(400).json({ error: err.message })
-      return
-    }
-    console.log("data:", data)
-    res.status(200).json({
-      message: "success",
-      data
-    })
-  })
+  mintProposalModel
+    .getMintProposals(offset, limit)
+    .then((proposals) =>
+      res.json({
+        message: "success",
+        data: proposals
+      })
+    )
+    .catch((err) => res.status(400).json({ error: err.message }))
 })
 
-app.post("/api/scoreProposal/delete", (req, res, next) => {
-  var errors = []
-  const data = JSON.parse(Object.keys(req.body)[0])
-  const { serial_id } = data
-  if (!serial_id) errors.push("No serial id specified")
-  if (errors.length) {
-    res.status(400).json({ error: errors.join(",") })
-    return
-  }
-  var sql = `DELETE FROM scoreProposal WHERE serial_id = ${serial_id}`
-  var db = new sqlite3.Database("./main.db")
-  db.run(sql, function (err, result) {
-    if (err) {
-      res.status(400).json({ error: err.message })
-      return
-    }
-    res.json({
-      message: "success",
-      result
-    })
-  })
-})
-
-app.post("/api/scoreProposal/create", (req, res, next) => {
+app.post("/api/proposal/mint/create", (req, res, next) => {
   var errors = []
   //const data = JSON.parse(Object.keys(req.body)[0])
   const {
@@ -123,33 +135,140 @@ app.post("/api/scoreProposal/create", (req, res, next) => {
     res.status(400).json({ error: errors.join(",") })
     return
   }
-  var sql =
-    "INSERT INTO scoreProposal (proposal_id, proposer, receiver, amount, description, transaction_hash, propose_time) VALUES (?,?,?,?,?,?,?)"
-  var params = [
-    proposal_id,
-    proposer,
-    receiver,
-    amount,
-    description,
-    transaction_hash,
-    propose_time
-  ]
-  console.log("params:", JSON.stringify(params))
 
-  var db = new sqlite3.Database("./main.db")
-  db.run(sql, params, function (err) {
-    console.log("err:", JSON.stringify(err))
-    if (err) {
-      res.status(400).json({ error: err.message })
-      db.close()
-      return
-    }
-    res.json({
-      message: "success"
+  mintProposalModel
+    .createMintProposal(
+      proposal_id,
+      proposer,
+      receiver,
+      amount,
+      description,
+      Number(propose_time),
+      transaction_hash
+    )
+    .then(() => {
+      const receivers = [receiver]
+      holderModel
+        .getNewHolders(receivers)
+        .then((newHolders) => {
+          holderModel
+            .addHolders(newHolders.addresses, newHolders.names)
+            .then(() => {
+              res.json({
+                message: "success"
+              })
+            })
+            .catch((err) => res.status(400).json({ error: err.message }))
+        })
+        .catch((err) => res.status(400).json({ error: err.message }))
     })
-    db.close()
-  })
+    .catch((err) => res.status(400).json({ error: err.message }))
 })
+
+app.post("/api/proposal/batchmint/create", (req, res, next) => {
+  var errors = []
+  //const data = JSON.parse(Object.keys(req.body)[0])
+  const {
+    proposalId,
+    proposer,
+    receivers,
+    amounts,
+    description,
+    proposeTx,
+    proposeTime
+  } = req.body
+  if (!proposalId) errors.push("No proposal id specified")
+  if (!proposer) errors.push("No proposer specified")
+  if (!receivers) errors.push("No receivers specified")
+  if (!amounts) errors.push("No amounts specified")
+  if (!description) errors.push("No description specified")
+  if (!proposeTime) errors.push("No propose time specified")
+  if (!proposeTx) errors.push("No transaction hash specified")
+
+  if (errors.length) {
+    res.status(400).json({ error: errors.join(",") })
+    return
+  }
+
+  mintProposalModel
+    .createBatchMintProposal(
+      proposalId,
+      proposer,
+      receivers,
+      amounts,
+      description,
+      Number(proposeTime),
+      proposeTx
+    )
+    .then(() => {
+      holderModel
+        .getNewHolders(receivers)
+        .then((newHolders) => {
+          holderModel
+            .addHolders(newHolders.addresses, newHolders.names)
+            .then(() => {
+              res.json({
+                message: "success"
+              })
+            })
+            .catch((err) => res.status(400).json({ error: err.message }))
+        })
+        .catch((err) => res.status(400).json({ error: err.message }))
+    })
+    .catch((err) => res.status(400).json({ error: err.message }))
+})
+
+// app.post("/api/scoreProposal/create", (req, res, next) => {
+//   var errors = []
+//   //const data = JSON.parse(Object.keys(req.body)[0])
+//   const {
+//     proposal_id,
+//     proposer,
+//     receiver,
+//     amount,
+//     description,
+//     transaction_hash,
+//     propose_time
+//   } = req.body
+//   if (!proposal_id) errors.push("No proposal id specified")
+//   if (!proposer) errors.push("No proposer specified")
+//   if (!receiver) errors.push("No receiver specified")
+//   if (!amount) errors.push("No amount specified")
+//   if (!description) errors.push("No description specified")
+//   if (!propose_time) errors.push("No propose time specified")
+//   if (!transaction_hash) errors.push("No transaction hash specified")
+
+//   if (errors.length) {
+//     res.status(400).json({ error: errors.join(",") })
+//     return
+//   }
+//   var sql =
+//     "INSERT INTO scoreProposal (proposal_id, proposer, receiver, amount, description, transaction_hash, propose_time) VALUES (?,?,?,?,?,?,?)"
+//   var params = [
+//     proposal_id,
+//     proposer,
+//     receiver,
+//     amount,
+//     description,
+//     transaction_hash,
+//     propose_time
+//   ]
+//   console.log("params:", JSON.stringify(params))
+
+//   var db = new sqlite3.Database("./main.db")
+//   db.run(sql, params, function (err) {
+//     console.log("err:", JSON.stringify(err))
+//     if (err) {
+//       res.status(400).json({ error: err.message })
+//       db.close()
+//       return
+//     }
+//     res.json({
+//       message: "success"
+//     })
+//     db.close()
+//   })
+// })
 
 app.listen(port, function () {
   console.log(`Example app listening on: ${serverUrl}`)

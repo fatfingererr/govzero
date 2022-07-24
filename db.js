@@ -1,23 +1,20 @@
-var sqlite3 = require("sqlite3").verbose()
-var db = new sqlite3.Database("./main.db")
+const mongoose = require("mongoose")
 
-db.serialize(function () {
+// DDAO
+// mongodb+srv://<user></user>:<password>@ddao.n7b87r2.mongodb.net/?retryWrites=true&w=majority
 
-  // db.get('PRAGMA journal_mode=WAL;')
+mongoose.connect(
+  `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@ddao.n7b87r2.mongodb.net/?retryWrites=true&w=majority`
+)
 
-  const sqlCreateTableScoreProposal =
-    "create table if not exists ScoreProposal (\
-    serial_id INTEGER PRIMARY KEY AUTOINCREMENT,\
-    proposal_id TEXT UNIQUE NOT NULL,\
-    proposer TEXT NOT NULL,\
-    receiver TEXT NOT NULL,\
-    amount TEXT NOT NULL,\
-    description TEXT NOT NULL,\
-    transaction_hash TEXT NOT NULL,\
-    propose_time INTEGER NOT NULL\
-    )"
-
-  db.run(sqlCreateTableScoreProposal)
+const db = mongoose.connection
+db.on("error", (err) => {
+  console.error("MongoDB error: ", err.message)
+  process.exit(1)
 })
 
-module.exports = db
+db.once("open", () => {
+  console.log("MongoDB connection established")
+})
+
+module.exports = mongoose

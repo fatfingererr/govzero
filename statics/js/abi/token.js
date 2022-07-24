@@ -1,4 +1,25 @@
-function mintInterface(){
+function batchMintInterface() {
+  return {
+    inputs: [
+      {
+        internalType: "address[]",
+        name: "toArray",
+        type: "address[]"
+      },
+      {
+        internalType: "uint256[]",
+        name: "amountArray",
+        type: "uint256[]"
+      }
+    ],
+    name: "batchMint",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  }
+}
+
+function mintInterface() {
   return {
     inputs: [
       {
@@ -236,6 +257,24 @@ function tokenAbi() {
         }
       ],
       stateMutability: "view",
+      type: "function"
+    },
+    {
+      inputs: [
+        {
+          internalType: "address[]",
+          name: "toArray",
+          type: "address[]"
+        },
+        {
+          internalType: "uint256[]",
+          name: "amountArray",
+          type: "uint256[]"
+        }
+      ],
+      name: "batchMint",
+      outputs: [],
+      stateMutability: "nonpayable",
       type: "function"
     },
     {
