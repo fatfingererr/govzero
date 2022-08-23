@@ -1933,6 +1933,16 @@
         })
         await switchNetworkCheck()
         web3 = new Web3(window.ethereum)
+
+        window.ethereum.on('chainChanged', async chainId => {
+            console.log('chain changed', chainId)
+            if (chainId !== web3.utils.toHex(CHAIN_ID)) {
+                window.location.reload()
+                alert('点击确认切换到 ' + CHAIN_NAME)
+                await switchNetworkCheck()
+            }
+        })
+
         var account = document.getElementById("account")
         const accountsAddr = await web3.eth.requestAccounts()
         const accountAddress = accountsAddr[0]
